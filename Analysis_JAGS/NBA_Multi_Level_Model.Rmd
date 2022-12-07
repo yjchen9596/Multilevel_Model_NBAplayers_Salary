@@ -4,32 +4,30 @@ author: "Yuka Chen"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
 	message = FALSE,
 	warning = FALSE,
 	tidy = TRUE,
 	error = TRUE,
-	tidy.opts = list(width.cutoff = 60)
+	tidy.opts = list(width.cutoff = 70)
 )
 ```
-
 Last semester, I did a project with my friends about predicting NBA players' salary by their performance for Regression class. I want to try the same data with multiple level models to see if there's anything interesting different from the regular linear regression model.
 
-Previous project github repo: <https://github.com/yjchen9596/NBA-Players-Salary-Prediction>
+- Previous project github repo: `<https://github.com/yjchen9596/NBA-Players-Salary-Prediction>`
 
-For JAGS, I clean my data in a way that will work better. My github repo has more information about this project, as well as how I cleaned the data: <https://github.com/yjchen9596/Multilevel_Model_NBAplayers_Salary>
+For JAGS, I clean my data in a way that will work better. My github repo has more information about this project, as well as how I cleaned the data: 
 
-For the model, I use salary as y predictors and total points of the season by players as x. The data is a combination of NBA players salary history with 2016-2017 season and 2017-2018 season performance. To compare with previous project results, I kept the same two seasons for the dataset as well.
+- NBA JAGS repo `<https://github.com/yjchen9596/Multilevel_Model_NBAplayers_Salary>`
+
+For the model, I use salary as y predictors and total points of the season by players as x. The data is a combination of NBA players salary history with 2016-2017 season and 2017-2018 season performance. To compare with previous project results, I kept the same two seasons for the data set as well.
 
 As group level predictors, I categorized the player's age into three categories ('Young', 'Medium', 'Aged'). The second group level predictor is players' position.
 
 I went with a multi-level varying intercept and varying slope model.
 
-# Load Library
-
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
 library(rjags)
 library(coda)
@@ -45,9 +43,10 @@ library(ggthemr)
 library(mcmcplots)
 library(superdiag)
 library(ggmcmc)
+library(knitr)
+library(broom)
+library(modelsummary)
 ```
-
-# Load Data
 
 ```{r}
 NBA <- read_csv("../Data/NBA.csv")
@@ -60,8 +59,8 @@ Allowing for the intercept to vary across NBA player_id. This is done using the 
 ## lmer Model
 
 ```{r}
-basic.linear.model <- lmer(salary ~  pts + (1 | position) + (1 | age_group), data = NBA)
-display(basic.linear.model, digits=3)
+basic.linear.model <- lmer(salary ~  pts + (1 | position) + (1 | age_group), data = NBA, REML= FALSE)
+modelsummary::msummary(list("Basic lmer Model" = basic.linear.model))
 ```
 
 ```{r}
@@ -70,13 +69,22 @@ VarCorr(basic.linear.model)
 
 The model can be specified as below:
 
-$y_{i} \sim N(\alpha_{j[i]}+\beta_{j[i]}points,\sigma^2_y)$
+$$
+\begin{aligned}
+y_{i} \sim N(\alpha_{j[i]}+\beta_{j[i]}points,\sigma^2_y)
+\end{aligned}
+$$
 
-$\binom{\alpha_{j}}{\beta_{j}} = N(\ \binom{\gamma^{\alpha}_0+\gamma^\alpha_1group\_age_{j}+\gamma^\alpha_2position_j}{\gamma^{\beta}_0+\gamma^\beta_1group\_age_{j}+\gamma^\beta_2position_j}, \  \binom{\sigma^2_\alpha\ \ \ \ \ \ \rho\sigma_\alpha\sigma_\beta}{\rho\sigma_\alpha\ \ \ \ \ \ \ \ \ \sigma^2_\beta}\ )\ \ \  for \ \ j = 1, ...J$
+$$
+\begin{aligned}
+\binom{\alpha_{j}}{\beta_{j}} = N(\ \binom{\gamma^{\alpha}_0+\gamma^\alpha_1group\_age_{j}+\gamma^\alpha_2position_j}{\gamma^{\beta}_0+\gamma^\beta_1group\_age_{j}+\gamma^\beta_2position_j}, \  \binom{\sigma^2_\alpha\ \ \ \ \ \ \rho\sigma_\alpha\sigma_\beta}{\rho\sigma_\alpha\ \ \ \ \ \ \ \ \ \sigma^2_\beta}\ )\ \ \  for \ \ j = 1, ...J
+\end{aligned}
+$$
 
 The subscript j[i] denotes that the intercepts and slopes can vary by group. Modeling these group-level effects as a function of the group-level predictors age group and position; and allows there to be a correlation between the points and intercept parameters.
 
 # JAGS - Simple Linear Regression
+
 ## Set Up Jags
 
 This model predicts salary by points, allowing for the intercept to vary across NBA players, specifying varying intercepts using the players-specific indicator variable in dummies.
@@ -86,31 +94,21 @@ set.seed(20221205)
 ```
 
 ```{r}
-# Creating n
+# Define variables
 n <- length(NBA$salary)
-# Creating J - player_id
 unique.player <- unique(NBA$player_id)
 J <- length(unique.player)
-# Creating y - salary
 y <- NBA$salary 
-# Creating x - pts
 x <- NBA$pts
-# Creating player indicator
 player <- rep(NA, J)
 for (i in 1:J) player[NBA$player_id == unique.player[i]] <- i
 ```
 
-```{r}
-# list data for JAGS model
+```{r echo=FALSE}
 nba.jags.data <- list("n","J","y","player","x")
-
-# initial
 nba.jags.inits <- function(){
   list(a=rnorm(J), b=rnorm(1), mu.a=rnorm(1), sigma.y=runif(1), sigma.a=runif(1))}
-
-# parameters for JAGS
 nba.jags.parameters <- c("a", "b", "mu.a", "sigma.y", "sigma.a")
-
 nba.jags <- function() { for (i in 1:n){
     y[i] ~ dnorm (y.hat[i], tau.y)
     y.hat[i] <- a[player[i]] + b*x[i]
@@ -126,93 +124,87 @@ nba.jags <- function() { for (i in 1:n){
   sigma.a ~ dunif (0, 100)
 }
 write.model(nba.jags, "nba.jags.rjags")
-```
-
-## This is the actual JAGS run
-
-```{r}
 nba.jags.out <- jags(data=nba.jags.data, inits=nba.jags.inits,
                       parameters.to.save=nba.jags.parameters,
                       model="nba.jags.rjags", n.chains=3, n.iter=2000, DIC=F)
-
 nba.jags.out1a <- update(nba.jags.out, n.iter=10000)
 ```
 
-##Summary
+##Summary 
 
-```{r}
-bb.mod.mcmc1 <- as.mcmc(nba.jags.out1a)
-mcmcplot(bb.mod.mcmc1)
-```
 
-```{r}
+*Because the original R Markdown went over 7 pages, so I set the first two jags model to only show output. Varying Intercept and Slopes models has the Jags code*
+
+
+```{r }
+# bb.mod.mcmc1 <- as.mcmc(nba.jags.out1a)
+# mcmcplot(bb.mod.mcmc1)
 knitr::kable(nba.jags.out1a$BUGSoutput$summary[c(1:2, 560:564), c(1, 2, 3, 7, 8, 9)], digits = 3)
 ```
 
-## Check convergence
+## Check Convergence
 
 ```{r message=FALSE, warning=FALSE}
 mcmc.nba.out1 <- as.mcmc(nba.jags.out1a, ariable.names=names(asap.jags.list)) 
 nba.mcmc1.convergence <- superdiag(as.mcmc.list(mcmc.nba.out1), burnin=0)
-sink("nba.mcmc1.convergence2.txt")
-nba.mcmc1.convergence
-sink() 
+# sink("nba.mcmc1.convergence2.txt")
+# nba.mcmc1.convergence
 ```
 
-```{r}
-knitr::kable(bind_rows(nba.mcmc1.convergence[1:4][1:4]))
-```
+The output was saved as txt file and I copied one of the diagnostic from the txt folder because whole output is too long.
 
-
-Copied one of the diagnostic from the txt folder
-
-
-| The Raftery-Lewis diagnostic |           |       |             |            |
-|:----------------------------:|:---------:|:-----:|-------------|------------|
-|            Chain             |    1:     |       |             |            |
-|       Convergence eps        |   0.001   |       |             |            |
-|         Quantile (q)         |   0.025   |       |             |            |
-|         Accuracy (r)         | +/- 0.005 |       |             |            |
-|       Probability (s)        |   0.95    |       |             |            |
-|                              |  Burn-in  | Total | Lower bound | Dependence |
-|                              |    (M)    |  (N)  | (Nmin)      | factor (I) |
-|             a[1]             |     2     | 3710  | 3746        | 0.990      |
-|            a[10]             |     2     | 3771  | 3746        | 1.010      |
-|            a[100]            |     2     | 3771  | 3746        | 1.010      |
-|            a[101]            |     2     | 3834  | 3746        | 1.020      |
-
-
++------------------------------+-----------+-----------+-------------+------------+
+| The Raftery-Lewis diagnostic |           |           |             |            |
++:============================:+:=========:+:=========:+=============+============+
+| Chain                        | 1:        |           |             |            |
++------------------------------+-----------+-----------+-------------+------------+
+| Convergence eps              | 0.001     |           |             |            |
++------------------------------+-----------+-----------+-------------+------------+
+| Quantile (q)                 | 0.025     |           |             |            |
++------------------------------+-----------+-----------+-------------+------------+
+| Accuracy (r)                 | +/- 0.005 |           |             |            |
++------------------------------+-----------+-----------+-------------+------------+
+| Probability (s)              | 0.95      |           |             |            |
++------------------------------+-----------+-----------+-------------+------------+
+|                              | Burn-in   | Total     | Lower bound | Dependence |
++------------------------------+-----------+-----------+-------------+------------+
+|                              | (M)       | (N)       | (Nmin)      | factor (I) |
++------------------------------+-----------+-----------+-------------+------------+
+| a[1]                         | 2         | 3710      | 3746        | 0.990      |
++------------------------------+-----------+-----------+-------------+------------+
+| a[10]                        | 2         | 3771      | 3746        | 1.010      |
++------------------------------+-----------+-----------+-------------+------------+
+| a[100]                       | 2         | 3771      | 3746        | 1.010      |
++------------------------------+-----------+-----------+-------------+------------+
+| a[101]                       | 2         | 3834      | 3746        | 1.020      |
++------------------------------+-----------+-----------+-------------+------------+
 
 # JAGS - Varying Intercept
 
-This model include group-level predictors (= players) for age group and position. 
+This model include group-level predictors (= players) for age group and position.
 
-## Set up group level predictors
+## Set Up Group Level Predictors
+
 ```{r warning=FALSE}
 # Add group-level predictors
 #### player position ####
 age_group <- rep(NA, J)
 for (i in unique(NBA$player_id)){age_group[i] <- unique(NBA$age_group[which(NBA$player_id == i)])}
 age_group <- age_group[!is.na(age_group)]
-
 #### age ####
 position <- rep(NA, J)
 for (i in unique(NBA$player_id)){position[i] <- unique(NBA$position[which(NBA$player_id == i)])}
 position <- position[!is.na(position)]
 ```
 
-## set up JAGS
-```{r}
+## Set Up JAGS
+
+```{r echo=FALSE}
 nba.jags.data2 <- list("n","J","y","player","x", "age_group", "position")
-################################
-# Function to return list of starting values of algorithm including priors on # group-level coefficients
 nba.jags.inits2 <- function(){
   list(a=rnorm(J), b=rnorm(1), g0=rnorm(1), g1=rnorm(1), g2=rnorm(1),
        sigma.y=runif(1), sigma.a=runif(1))}
-################################
 nba.jags.parameters2 <- c("a", "b", "g0", "g1", "g2", "sigma.y", "sigma.a")
-################################
-########## The model ###########
 nba.jags.M2 <- function() { 
   for (i in 1:n){
     y[i] ~ dnorm (y.hat[i], tau.y)
@@ -233,59 +225,49 @@ nba.jags.M2 <- function() {
   sigma.a ~ dunif (0, 100)
 }
 write.model(nba.jags.M2, "nba.jags.M2.rjags")
-################################
 nba.jags.out2 <- jags(data=nba.jags.data2, inits=nba.jags.inits2,
                       parameters.to.save=nba.jags.parameters2,
                       model="nba.jags.M2.rjags", n.chains=3, n.iter=2000, DIC=F)
 ```
-## Summary
 
+## Summary
 
 ```{r message=FALSE, warning=FALSE}
 nba.jags.out2a <- update(nba.jags.out2, n.iter=10000)
-knitr::kable(nba.jags.out2a$BUGSoutput$summary[c(1:2, 555:566), c(1, 2, 3, 7, 8, 9)],
+knitr::kable(nba.jags.out2a$BUGSoutput$summary[c(1:2, 561:566), c(1, 2, 3, 7, 8, 9)],
       digits = 3)
 ```
 
 ```{r}
-bb.mod.mcmc2 <- as.mcmc(nba.jags.out2a)
-mcmcplot(bb.mod.mcmc2)
+# bb.mod.mcmc2 <- as.mcmc(nba.jags.out2a)
+# mcmcplot(bb.mod.mcmc2)
 ```
 
-## Check convergence
-
+## Check Convergence
 
 ```{r}
 mcmc.nba.out2 <- as.mcmc(nba.jags.out2a, ariable.names=names(asap.jags.list)) 
 nba.mcmc2.convergence <- superdiag(as.mcmc.list(mcmc.nba.out2), burnin=0)
-sink("nba.mcmc2.convergence.txt")
-nba.mcmc2.convergence
-sink() 
+# sink("nba.mcmc2.convergence.txt")
+# nba.mcmc2.convergence
 ```
 
-```{r}
-knitr::kable(bind_rows(nba.mcmc1.convergence[1:4][1:4]))
-```
-
-Copied one of the diagnostic from the txt folder
-
-| The Raftery-Lewis diagnostic  	|  	|  	|
-|---	|---	|---	|
-| Chain 1: 	|  	|  	|
-| Convergence eps  	| 0.001 	|  	|
-| Quantile (q)  	| 0.025 	|  	|
-| Accuracy (r)  	| +/- 0.005 	|  	|
-| Probability (s)  	| 0.95 	|  	|
-|  	|  	|  	|
-|  	| Burn-in 	| Total 	|
-|  	| (M) 	| (N) 	|
-| a[1] 	| 2 	| 3802 	|
-| a[10] 	| 2 	| 3802 	|
-
+| The Raftery-Lewis diagnostic |           |       |
+|------------------------------|-----------|-------|
+| Chain 1                      |           |       |
+| Convergence eps              | 0.001     |       |
+| Quantile (q)                 | 0.025     |       |
+| Accuracy (r)                 | +/- 0.005 |       |
+| Probability (s)              | 0.95      |       |
+|                              |           |       |
+|                              | Burn-in   | Total |
+|                              | (M)       | (N)   |
+| a[1]                         | 2         | 3802  |
+| a[10]                        | 2         | 3802  |
 
 ## Plot
 
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE, warning=FALSE, out.width = '50%',fig.align = 'center'}
 ggthemr("solarized")
 plotData = data.frame(pid = 1:length(unique(NBA$player_id)),
                       estM1 = nba.jags.out1a$BUGSoutput$summary[1:560,1],
@@ -308,18 +290,12 @@ ggplot(data = plotData) +
         axis.title.x = element_blank())
 ```
 
-
 It is hard to see if there's any points influence on the players' salary. Instead of plotting all players, it will be easier to see the effects in individual players.
 
-
-## select random 6 people
-```{r echo=TRUE, message=FALSE, warning=FALSE}
-player_id_8 <- NBA |> 
-  filter(pts>10) |> 
-  group_by(player_id) |> 
-  mutate(Len = n()) |> 
-  filter(Len > 6) |> 
-  ungroup() |> 
+```{r message=FALSE, warning=FALSE, include=FALSE}
+player_id_8 <- NBA |> filter(pts>10) |> 
+  group_by(player_id) |> mutate(Len = n()) |> 
+  filter(Len > 6) |> ungroup() |> 
   distinct(player_id)
 selPid <- slice_sample(player_id_8, n = 8)
 selPid <- selPid[["player_id"]]
@@ -327,6 +303,7 @@ selMod <- match(selPid, unique(NBA$player_id))
 ```
 
 ```{r include=FALSE}
+## Select Random 8 People
 ramdom_player <- data.frame(player_id = selPid,
                       intercept1 = nba.jags.out1a$BUGSoutput$summary[selMod,1],
                       slope1 = nba.jags.out1a$BUGSoutput$summary[564,1],
@@ -334,9 +311,10 @@ ramdom_player <- data.frame(player_id = selPid,
                       slope2 = nba.jags.out2a$BUGSoutput$summary[566,1])
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE, out.width = '50%', fig.align = 'center'}
 ggthemr("solarized")
-ggplot(NBA[NBA$player_id %in% selPid,]) +
+ggplot(NBA[NBA$player_id %in% selPid,]) + 
+  ## 8 ramdom players - selection was done ny privious chuck which is hidden in pdf
   geom_point(alpha = 0.5, aes(x = pts, y = salary)) +
   geom_abline(data = ramdom_player, aes(intercept = intercept1, slope = slope1)) +
   geom_abline(data = ramdom_player, aes(intercept = intercept2, slope = slope2),
@@ -351,14 +329,12 @@ It seems like there's a small increase in salary while players scored more point
 
 Varying intercepts and slopes Jags model allows intercepts and slopes to vary by player and to be estimated by the group-level predictors. Having varying intercepts and slopes allows us to model the multilevel correlation between intercepts and slopes.
 
+## Set Up JAGS
+
 ```{r}
 nba.jags.data3 <- list("n","J","y","player","x", "age_group", "position")
-#################
-# group-level coefficients
 nba.jags.inits3 <- function(){list(B=array(rnorm(2*J), c(J,2)), g0a=rnorm(1), g1a=rnorm(1),  g2a=rnorm(1), g0b=rnorm(1), g1b=rnorm(1), g2b=rnorm(1), sigma.y=runif(1), sigma.a=runif(1))}
-#################
 nba.jags.parameters3 <- c("a", "b", "sigma.y", "sigma.a", "rho", "g0a", "g1a","g2a", "g0b", "g1b", "g2b", "sigma.b")
-########The model#########
 nba.jags.M3 <- function(){ for(i in 1:n){
     y[i] ~ dnorm(y.hat[i], tau.y)
     y.hat[i] <- a[player[i]] + b[player[i]]*x[i]
@@ -388,9 +364,6 @@ nba.jags.M3 <- function(){ for(i in 1:n){
   rho ~ dunif(-1,1)
 }
 write.model(nba.jags.M3, "nba.jags.M3.rjags")
-```
-
-```{r}
 # The number of iterations
 M <- 10000
 # This is the actual JAGS run
@@ -400,33 +373,23 @@ nba.jags.out3 <- jags(data=nba.jags.data3, inits=nba.jags.inits3,parameters.to.s
 ## Summary
 
 ```{r}
-bb.mod.mcmc <- as.mcmc(nba.jags.out3)
-mcmcplot(bb.mod.mcmc)
-```
-
-```{r}
-knitr::kable(nba.jags.out3$BUGSoutput$summary[c(1:2,249:252,1120:1130),
+# bb.mod.mcmc <- as.mcmc(nba.jags.out3)
+# mcmcplot(bb.mod.mcmc)
+knitr::kable(nba.jags.out3$BUGSoutput$summary[c(1:2,250:252,1120:1130),
                                               c(1, 2, 3, 7, 8, 9)], digits = 3,
              caption = "Varying Intercepts and Slopes")
 ```
 
-The summary tables shows some of the player-specific intercepts and slopes. It also shows group-level regressions — one for intercepts and one for slopes, and the estimated correlation $\rho$ between the intercept and slope parameter as well as the $\sigma$'s for individual level, intercepts, and slopes.
+The summary tables shows some of the player-specific intercepts and slopes. It also shows group-level regressions --- one for intercepts and one for slopes, and the estimated correlation $\rho$ between the intercept and slope parameter as well as the $\sigma$'s for individual level, intercepts, and slopes.
 
-
-## Check convergence
+## Check Convergence
 
 ```{r}
 mcmc.nba.out3 <- as.mcmc(nba.jags.out3, ariable.names=names(asap.jags.list)) 
 nba.mcmc3.convergence <- superdiag(as.mcmc.list(mcmc.nba.out3), burnin=0)
-sink("nba.mcmc3.convergence.txt")
-nba.mcmc3.convergence
-sink() 
+# sink("nba.mcmc3.convergence.txt")
+# nba.mcmc3.convergence
 ```
-
-```{r}
-knitr::kable(bind_rows(nba.mcmc3.convergence[1:4][1:4]))
-```
-Copied one of the diagnostic from the txt folder
 
 | The Raftery-Lewis diagnostic  	|  	|
 |---	|---	|
@@ -436,8 +399,6 @@ Copied one of the diagnostic from the txt folder
 | Accuracy (r) = 	| +/- 0.005 	|
 | Probability (s) = 	| 0.95 	|
 
-You need a sample size of at least 3746 with these values of q, r and s
-
 | Chain 2: 	|  	|
 |---	|---	|
 | Convergence eps  	| 2e-04 	|
@@ -445,30 +406,32 @@ You need a sample size of at least 3746 with these values of q, r and s
 | Accuracy (r)  	| +/- 0.005 	|
 | Probability (s)  	| 0.9 	|
 
-You need a sample size of at least 5141 with these values of q, r and s
 
-| Chain 3: 	|  	|
-|---	|---	|
-| Convergence eps  	| 0.0025 	|
-| Quantile (q)  	| 0.05 	|
-| Accuracy (r)  	| +/- 0.001 	|
-| Probability (s)  	| 0.9 	|
+| Chain 3:        |           |
+|-----------------|-----------|
+| Convergence eps | 0.0025    |
+| Quantile (q)    | 0.05      |
+| Accuracy (r)    | +/- 0.001 |
+| Probability (s) | 0.9       |
 
-You need a sample size of at least 128514 with these values of q, r and s
+- Chain 1: You need a sample size of at least 3746 with these values of q, r and s 
+- Chain 2: You need a sample size of at least 5141 with these values of q, r and s
+- Chain 3: You need a sample size of at least 128514 with these values of q, r and s
 
 ## Plot
-
 ```{r include=FALSE}
 plotData3 <- data.frame(player_id = selPid,
                       intercept1 = nba.jags.out2a$BUGSoutput$summary[selMod,1],
                       slope1 = nba.jags.out2a$BUGSoutput$summary[566,1],
                       intercept2 = nba.jags.out3$BUGSoutput$summary[selMod,1],
                       slope2 = nba.jags.out3$BUGSoutput$summary[566+selMod,1])
+modelCol <- c("M1" = "dodgerblue", "M2" = "firebrick")
+modelLine <- c("M1" = "solid", "M2" = "dashed")
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE, out.width = '50%',fig.align = 'center'}
 ggthemr("solarized")
-ggplot(NBA2) +
+ggplot(NBA[NBA$player_id %in% selPid,]) +
   geom_point(alpha = 0.5, aes(x = pts, y = salary))+
     facet_wrap(~player_id, nrow = 2)+
   geom_abline(data = plotData3, aes(intercept = intercept1, slope = slope1,color = "M1", linetype = "M1")) +
@@ -477,9 +440,10 @@ ggplot(NBA2) +
    scale_linetype_manual(name="Model", values = modelLine,labels = c("Varying Intercepts", "Varying Intercepts and Slopes"))+
   labs(x = "Points", y = "Salary") +
   theme(legend.position="top") 
+
 ```
 
-```{r}
+```{r, out.width = '50%',fig.align = 'center'}
 ggplot(NBA[NBA$player_id %in% selPid,]) +
   geom_point(alpha = 0.5, aes(x = pts, y = salary)) +
   geom_abline(data = plotData3, aes(intercept = intercept1, slope = slope1,

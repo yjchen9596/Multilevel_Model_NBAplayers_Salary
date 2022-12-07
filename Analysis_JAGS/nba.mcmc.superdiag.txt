@@ -1,3 +1,166 @@
 Plotting histograms
 Plotting density plots
 Plotting traceplots
+lmer(formula = salary ~ pts + (1 | position) + (1 | age_group), 
+    data = NBA)
+            coef.est    coef.se    
+(Intercept) 2152901.017 1221157.938
+pts            8589.641     299.837
+
+Error terms:
+ Groups    Name        Std.Dev.   
+ position  (Intercept)  863519.712
+ age_group (Intercept) 1967867.623
+ Residual              4809992.018
+---
+number of obs: 1258, groups: position, 6; age_group, 3
+AIC = 42267.5, DIC = 42343.4
+deviance = 42300.5 
+lmer(formula = salary ~ pts + (1 | position) + (1 | age_group), 
+    data = NBA)
+            coef.est    coef.se    
+(Intercept) 2152901.017 1221157.938
+pts            8589.641     299.837
+
+Error terms:
+ Groups    Name        Std.Dev.   
+ position  (Intercept)  863519.712
+ age_group (Intercept) 1967867.623
+ Residual              4809992.018
+---
+number of obs: 1258, groups: position, 6; age_group, 3
+AIC = 42267.5, DIC = 42343.4
+deviance = 42300.5 
+
+<table style="text-align:center"><tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left"></td><td><em>Dependent variable:</em></td></tr>
+<tr><td></td><td colspan="1" style="border-bottom: 1px solid black"></td></tr>
+<tr><td style="text-align:left"></td><td>salary</td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">pts</td><td>8,589.641<sup>***</sup></td></tr>
+<tr><td style="text-align:left"></td><td>(299.837)</td></tr>
+<tr><td style="text-align:left"></td><td></td></tr>
+<tr><td style="text-align:left">Constant</td><td>2,152,901.000<sup>*</sup></td></tr>
+<tr><td style="text-align:left"></td><td>(1,221,158.000)</td></tr>
+<tr><td style="text-align:left"></td><td></td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">Observations</td><td>1,258</td></tr>
+<tr><td style="text-align:left">Log Likelihood</td><td>-21,128.760</td></tr>
+<tr><td style="text-align:left">Akaike Inf. Crit.</td><td>42,267.520</td></tr>
+<tr><td style="text-align:left">Bayesian Inf. Crit.</td><td>42,293.210</td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left"><em>Note:</em></td><td style="text-align:right"><sup>*</sup>p<0.1; <sup>**</sup>p<0.05; <sup>***</sup>p<0.01</td></tr>
+</table>
+
+<table style="text-align:center"><tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left"></td><td><em>Dependent variable:</em></td></tr>
+<tr><td></td><td colspan="1" style="border-bottom: 1px solid black"></td></tr>
+<tr><td style="text-align:left"></td><td>salary</td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">pts</td><td>8,589.641<sup>***</sup></td></tr>
+<tr><td style="text-align:left"></td><td>(299.837)</td></tr>
+<tr><td style="text-align:left"></td><td></td></tr>
+<tr><td style="text-align:left">Constant</td><td>2,152,901.000<sup>*</sup></td></tr>
+<tr><td style="text-align:left"></td><td>(1,221,158.000)</td></tr>
+<tr><td style="text-align:left"></td><td></td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">Observations</td><td>1,258</td></tr>
+<tr><td style="text-align:left">Log Likelihood</td><td>-21,128.760</td></tr>
+<tr><td style="text-align:left">Akaike Inf. Crit.</td><td>42,267.520</td></tr>
+<tr><td style="text-align:left">Bayesian Inf. Crit.</td><td>42,293.210</td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left"><em>Note:</em></td><td style="text-align:right"><sup>*</sup>p<0.1; <sup>**</sup>p<0.05; <sup>***</sup>p<0.01</td></tr>
+</table>
+
+<table style="text-align:center"><tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left"></td><td><em>Dependent variable:</em></td></tr>
+<tr><td></td><td colspan="1" style="border-bottom: 1px solid black"></td></tr>
+<tr><td style="text-align:left"></td><td>salary</td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">pts</td><td>8,589.764<sup>***</sup></td></tr>
+<tr><td style="text-align:left"></td><td>(299.694)</td></tr>
+<tr><td style="text-align:left"></td><td></td></tr>
+<tr><td style="text-align:left">Constant</td><td>2,147,914.000<sup>**</sup></td></tr>
+<tr><td style="text-align:left"></td><td>(1,046,267.000)</td></tr>
+<tr><td style="text-align:left"></td><td></td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">Observations</td><td>1,258</td></tr>
+<tr><td style="text-align:left">Log Likelihood</td><td>-21,150.230</td></tr>
+<tr><td style="text-align:left">Akaike Inf. Crit.</td><td>42,310.450</td></tr>
+<tr><td style="text-align:left">Bayesian Inf. Crit.</td><td>42,336.140</td></tr>
+<tr><td colspan="2" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left"><em>Note:</em></td><td style="text-align:right"><sup>*</sup>p<0.1; <sup>**</sup>p<0.05; <sup>***</sup>p<0.01</td></tr>
+</table>
+Linear mixed model fit by maximum likelihood  ['lmerMod']
+Formula: salary ~ pts + (1 | position) + (1 | age_group)
+   Data: NBA
+
+     AIC      BIC   logLik deviance df.resid 
+ 42310.5  42336.1 -21150.2  42300.5     1253 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-3.1692 -0.6043 -0.0722  0.3501  5.4021 
+
+Random effects:
+ Groups    Name        Variance  Std.Dev.
+ position  (Intercept) 7.159e+11  846105 
+ age_group (Intercept) 2.702e+12 1643631 
+ Residual              2.312e+13 4808044 
+Number of obs: 1258, groups:  position, 6; age_group, 3
+
+Fixed effects:
+             Estimate Std. Error t value
+(Intercept) 2147914.2  1046266.8   2.053
+pts            8589.8      299.7  28.662
+
+Correlation of Fixed Effects:
+    (Intr)
+pts -0.119
+
+% Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
+% Date and time: Wed, Dec 07, 2022 - 06:31:29
+\begin{table}[!htbp] \centering 
+  \caption{Data} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lc} 
+\\[-1.8ex]\hline \\[-1.8ex] 
+\hline \\[-1.8ex] 
+ pts & 8589.764$^{***}$ \\ 
+  & (299.694) \\ 
+  Constant & 2147914.000$^{**}$ \\ 
+  & (1046267.000) \\ 
+ N & 1258 \\ 
+Log Likelihood & $-$21150.230 \\ 
+AIC & 42310.450 \\ 
+BIC & 42336.140 \\ 
+\hline \\[-1.8ex] 
+\multicolumn{2}{l}{$^{***}$p $<$ .01; $^{**}$p $<$ .05; $^{*}$p $<$ .1} \\ 
+\end{tabular} 
+\end{table} 
+
+% Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
+% Date and time: Wed, Dec 07, 2022 - 06:31:32
+\begin{table}[!htbp] \centering 
+  \caption{Data} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lc} 
+\\[-1.8ex]\hline \\[-1.8ex] 
+\hline \\[-1.8ex] 
+ pts & 8589.764$^{***}$ \\ 
+  & (299.694) \\ 
+  Constant & 2147914.000$^{**}$ \\ 
+  & (1046267.000) \\ 
+ N & 1258 \\ 
+Log Likelihood & $-$21150.230 \\ 
+AIC & 42310.450 \\ 
+BIC & 42336.140 \\ 
+\hline \\[-1.8ex] 
+\multicolumn{2}{l}{$^{***}$p $<$ .01; $^{**}$p $<$ .05; $^{*}$p $<$ .1} \\ 
+\end{tabular} 
+\end{table} 
+Warning in install.packages :
+  package ‘modelsummary
+’ is not available for this version of R
+
+A version of this package for your version of R might be available elsewhere,
+see the ideas at
+https://cran.r-project.org/doc/manuals/r-patched/R-admin.html#Installing-packages
+Warning in install.packages :
+  package ‘modelsummary
+’ is not available for this version of R
+
+A version of this package for your version of R might be available elsewhere,
+see the ideas at
+https://cran.r-project.org/doc/manuals/r-patched/R-admin.html#Installing-packages
+
+The downloaded binary packages are in
+	/var/folders/wq/yqm6vj097_9_d7xwp366vzf80000gn/T//RtmpTyNAxs/downloaded_packages
