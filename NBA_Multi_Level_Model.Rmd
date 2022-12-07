@@ -1,0 +1,545 @@
+---
+title: "NBA Multilevel Model"
+author: "Yuka Chen"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+---
+title: "Final Project"
+author: "Yuka Chen"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+# 1. The statement of the problem
+
+NBA players are on average the highest-paid athletes in the world, according to Statista.com. The NBA players get paid an average salary of around 7.5 million. The median salary is about 3.8 million. The highest salary in the NBA for the 2016-2017 season is about 25 million, including superstar LeBron James from Cleveland Cavaliers.
+
+Oftentimes sports players would seem to have major contracts with really high annual salaries (some people would even think they should not get paid so much).
+
+Since of one our group members is a super fan of the NBA, he believes that those basketball players are paid by their season total performance. However, other members in our group think otherwise.
+
+Through this project, we want to find out whether the NBA players and their season total performance have a strong correlation.
+
+For this project, we would use the 2016-2017 season total performance and actual salaries to create a prediction model. Then, we fit the
+2017-2018 season total performance to the prediction model, see the difference between the salaries we expected during 2017-2018 season and the actual salaries in 2017-2018.
+
+### Purpose:
+
+1.  Discover which predictors variables are critical to the salaries of the NBA players
+
+2.  Use a multiple regression model to predict NBA players' salaries
+
+3.  Examine the difference between the predicted salaries and actual salaries
+
+
+# Load Library
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(rjags)
+library(coda)
+library(superdiag)
+library(R2WinBUGS)
+library(R2jags)
+library(patchwork) ## for ggplots bind
+library(foreign)
+library(arm)
+library(GGally) # for ggpairs
+library(MCMCpack)
+library(runjags)
+```
+
+# Load Data
+```{r}
+NBA <- read_csv("NBA.csv")
+## remove rk, player ID, team name, player name, team name (we already has tm)
+```
+
+```{r}
+NBA |> 
+  select_if(~class(.) == 'character')
+```
+There are three level-variables.
+
+
+# Checking Y Predictable
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot1 = ggplot(data = NBA, aes(x = Salary_1718,color = trans_team, fill = trans_team))+
+  geom_histogram(bins = 20, alpha=0.2, position="identity")+
+  labs(title = "Distribution of 2017-2018 Salary", 
+       x = "Salary for 2017-2018",
+       y = "Numbers of Players")
+
+plot1+scale_color_brewer(palette="Dark2")+
+  scale_fill_brewer(palette="Dark2")+
+  scale_fill_discrete(name = "Team Transfer")+
+  scale_color_discrete(name = "Team Transfer")
+```
+
+```{r echo=TRUE}
+
+p1 <- ggplot(data = NBA, aes(x = Salary_1718, fill = trans_team)) +
+  geom_histogram( bins = 20, alpha=0.5) +
+  labs(title = "Distribution of 2017-2018 Salary")
+
+p2 <- ggplot(data = NBA, aes(y = Salary_1718, x = trans_team, fill = trans_team))+
+  geom_boxplot(alpha = 0.2, varwidth = TRUE,)+
+  labs(title = "Distribution of 2017-2018 Salary")
+
+p1 + p2
+```
+We can see there are some extreme value in salary of the players who didn't transfer the team for next year.
+
+
+```{r}
+map_df(NBA, ~sum(is.na(.)))
+```
+
+# Correlation Analysis
+```{r}
+## copy to console for better graph
+NBA |>
+  dplyr::select(-tm, -`fg`, -`fga`, -`3pa`, -`2pa`, -ft, -fta, -g, -gs,
+         -`efg%`, -mp, -orb, - drb, -pf, -age) -> NBA_LESS
+
+ggpairs(NBA_LESS, columns = c(15,1:5), ggplot2::aes(colour = pos),
+          upper = list(continuous = wrap("cor", size = 2))) -> pm_1_5
+pm_1_5
+
+ggpairs(NBA_LESS,columns = c(15,6:10), ggplot2::aes(colour = pos),
+          upper = list(continuous = wrap("cor", size = 2))) -> pm_6_10
+pm_6_10
+
+ggpairs(NBA_LESS,columns = c(15,11:14), ggplot2::aes(colour = pos),
+          upper = list(continuous = wrap("cor", size = 2))) -> pm_11_14
+pm_11_14
+
+```
+
+# Basic Simple Linear Regression
+
+allowing for the intercept to vary across children. This is done using the lmer function, specifying varying intercepts using the team, position, age and transfer the team or not indicator variable in ddummies.
+
+```{r}
+
+basic.linear.model <- lmer(Salary_1718 ~  Salary_1617 + g + gs + mp + fg + fga + fg.pct + `3p` + `3pa` + `3p.pct` + `2p` + `2pa` + `2p.pct` + `efg.pct` + ft + fta + ft.pct + orb + drb + trb + ast + stl + blk + tov + pf + pts + (1 | tm) + (1 | trans_team) + ( 1 | pos) + (1|age), data = NBA)
+
+
+display(basic.linear.model, digits=3)
+```
+
+```{r}
+VarCorr(basic.linear.model)
+```
+
+## Set Up Jags
+```{r}
+set.seed(20221205)
+```
+
+```{r}
+nba.jags.data <- 
+# Creating n
+n <- length(NBA$salary)
+# Creating J
+unique.player <- unique(NBA$player_id)
+J <- length(unique.player)
+# Creating y
+y <- NBA$salary 
+# Creating x
+x <- NBA$pts
+# Creating player indicator
+player <- rep(NA, J)
+for (i in 1:J) player[NBA$player_id == unique.player[i]] <- i
+```
+
+```{r}
+# Lists the data that will be contained in our JAGS model
+nba.jags.data <- list("n","J","y","player","x")
+
+nba.jags.inits <- function(){
+  list(a=rnorm(J), b=rnorm(1), mu.a=rnorm(1),
+       sigma.y=runif(1), sigma.a=runif(1))}
+# This is vector of names of parameters we want to save from the JAGS run
+nba.jags.parameters <- c("a", "b", "mu.a", "sigma.y", "sigma.a")
+
+```
+
+```{r}
+nba.jags <- function() { for (i in 1:n){
+    y[i] ~ dnorm (y.hat[i], tau.y)
+    y.hat[i] <- a[player[i]] + b*x[i]
+  }
+  b ~ dnorm (0, .0001)
+  tau.y <- pow(sigma.y, -2)
+  sigma.y ~ dunif (0, 100)
+for (j in 1:J){
+a[j] ~ dnorm (mu.a, tau.a)
+} 
+  mu.a ~ dnorm (0, .0001)
+  tau.a <- pow(sigma.a, -2)
+  sigma.a ~ dunif (0, 100)
+}
+
+write.model(nba.jags, "nba.jags.rjags")
+```
+
+## This is the actual JAGS run
+
+```{r}
+nba.jags.out <- jags(data=nba.jags.data, inits=nba.jags.inits,
+                      parameters.to.save=nba.jags.parameters,
+                      model="nba.jags.rjags", n.chains=3, n.iter=2000, DIC=F)
+```
+
+```{r}
+nba.jags.out1a <- update(nba.jags.out, n.iter=10000)
+```
+
+```{r}
+knitr::kable(nba.jags.out1a$BUGSoutput$summary[c(1:2, 560:564), c(1, 2, 3, 7, 8, 9)], digits = 3)
+```
+
+# Varying intercepts and slopes
+
+```{r warning=FALSE}
+# Creating n
+n <- length(NBA$salary)
+# Creating J
+unique.player <- unique(NBA$player_id)
+J <- length(unique.player) 
+# Creating y
+y <- NBA$salary 
+# Creating x
+x <- NBA$pts
+
+# Creating player indicator
+player <- rep(NA, J)
+for (i in 1:J) player[NBA$player_id == unique.player[i]] <- i
+
+# Group-level predictors
+
+# player position
+age_group <- rep(NA, J)
+for (i in unique(NBA$player_id)){
+  age_group[i] <- unique(NBA$age_group[which(NBA$player_id == i)])
+}
+age_group <- age_group[!is.na(age_group)]
+
+# age
+position <- rep(NA, J)
+for (i in unique(NBA$player_id)){
+  position[i] <- unique(NBA$position[which(NBA$player_id == i)])
+}
+position <- position[!is.na(position)]
+
+
+```
+
+#exercise 7
+```{r}
+# Lists the data that will be contained in our JAGS model including the new vars
+nba.jags.data2 <- list("n","J","y","player","x", "age_group", "position")
+# Function to return list of starting values of algorithm including priors on # group-level coefficients
+nba.jags.inits2 <- function(){
+  list(a=rnorm(J), b=rnorm(1), g0=rnorm(1), g1=rnorm(1), g2=rnorm(1),
+       sigma.y=runif(1), sigma.a=runif(1))}
+
+# This is vector of names of parameters we want to save from the JAGS run
+nba.jags.parameters2 <- c("a", "b", "g0", "g1", "g2", "sigma.y", "sigma.a")
+
+
+```
+
+```{r}
+# The model
+nba.jags.M2 <- function() { 
+  for (i in 1:n){
+    y[i] ~ dnorm (y.hat[i], tau.y)
+    y.hat[i] <- a[player[i]] + b*x[i]
+  }
+  b ~ dnorm (0, .0001)
+  tau.y <- pow(sigma.y, -2)
+  sigma.y ~ dunif (0, 100)
+  
+  for (j in 1:J){
+    a[j] ~ dnorm (a.hat[j], tau.a)
+    a.hat[j] <- g0 + g1*age_group[j] + g2*position[j]
+}
+
+  g0 ~ dnorm(0, 0.0001)
+  g1 ~ dnorm(0, 0.0001)
+  g2 ~ dnorm(0, 0.0001)
+  tau.a <- pow(sigma.a, -2)
+  sigma.a ~ dunif (0, 100)
+}
+write.model(nba.jags.M2, "nba.jags.M2.rjags")
+```
+
+```{r}
+# This is the actual JAGS run
+nba.jags.out2 <- jags(data=nba.jags.data2, inits=nba.jags.inits2,
+                      parameters.to.save=nba.jags.parameters2,
+                      model="nba.jags.M2.rjags", n.chains=3, n.iter=2000, DIC=F)
+```
+
+```{r}
+plot(nba.jags.out2)
+```
+
+```{r}
+nba.jags.out2a <- update(nba.jags.out2, n.iter=10000)
+```
+
+
+```{r}
+knitr::kable(nba.jags.out2a$BUGSoutput$summary[c(1:2, 555:566), c(1, 2, 3, 7, 8, 9)],
+      digits = 3)
+```
+
+
+# plot compare simple linear with varying intercept
+
+```{r warning=FALSE}
+plotData = data.frame(pid = 1:length(unique(NBA$player_id)),
+                      estM1 = nba.jags.out1a$BUGSoutput$summary[1:560,1],
+                      lowerM1 = nba.jags.out1a$BUGSoutput$summary[1:560,3],
+                      upperM1 = nba.jags.out1a$BUGSoutput$summary[1:560,7],
+                      estM2 = nba.jags.out2a$BUGSoutput$summary[1:560,1],
+                      lowerM2 = nba.jags.out2a$BUGSoutput$summary[1:560,3],
+                      upperM2 = nba.jags.out2a$BUGSoutput$summary[1:560,7])
+
+modelCol <- c("M1" = "dodgerblue", "M2" = "firebrick")
+
+ggplot(data = plotData) +
+  geom_hline(aes(yintercept =  nba.jags.out1a$BUGSoutput$summary[560,1], color = "M1"),
+             linetype = "twodash", size = 1) +
+  geom_hline(aes(yintercept =  nba.jags.out2a$BUGSoutput$summary[560,1], color = "M2"),
+             linetype = "twodash", size = 1) +
+  geom_pointrange(aes(x = pid + 0.5, y = estM1, ymin = lowerM1,
+                      ymax = upperM1, color = "M1"),
+                  position = position_dodge(width = 2/3),
+                  alpha = 0.5, shape = 1, fatten = 1, size = 1/2) +
+  geom_pointrange(aes(x = pid - 0.5, y = estM2, ymin = lowerM2,
+                      ymax = upperM2, color = "M2"),
+                  position = position_dodge(width = 2/3),
+                  alpha = 0.6, shape = 1, fatten = 1, size = 1/2) +
+  labs(y = "Estimated Intercept (Square Root)") +
+  scale_color_manual(values = modelCol) +
+  theme(legend.position="top",
+        legend.title = element_blank(),
+        axis.title.x = element_blank())
+```
+
+
+# exercise 8
+
+```{r}
+# Lists the data that will be contained in our JAGS model
+nba.jags.data3 <- list("n","J","y","player","x", "age_group", "position")
+# Function to return list of starting values of algorithm including priors on
+
+# group-level coefficients
+nba.jags.inits3 <- function(){list(B=array(rnorm(2*J), c(J,2)), g0a=rnorm(1), g1a=rnorm(1),  g2a=rnorm(1), g0b=rnorm(1), g1b=rnorm(1), g2b=rnorm(1), sigma.y=runif(1), sigma.a=runif(1))}
+# This is vector of names of parameters we want to save from the JAGS run
+nba.jags.parameters3 <- c("a", "b", "sigma.y", "sigma.a", "rho", "g0a", "g1a","g2a", "g0b", "g1b", "g2b", "sigma.b")
+
+
+# The model
+nba.jags.M3 <- function(){ for(i in 1:n){
+    y[i] ~ dnorm(y.hat[i], tau.y)
+    y.hat[i] <- a[player[i]] + b[player[i]]*x[i]
+  }
+  tau.y <- pow(sigma.y, -2)
+  sigma.y ~ dunif(0, 100) 
+  
+  for(j in 1:J){
+    a[j] <- B[j,1]
+    b[j] <- B[j,2]
+    B[j, 1:2]  ~ dmnorm(B.hat[j,], Tau.B[,])
+    B.hat[j,1] <- g0a + g1a*age_group[j] + g2a*position[j]
+    B.hat[j,2] <- g0b + g1b*age_group[j] + g2b*position[j]
+  }
+  
+  g0a  ~ dnorm(0, .0001)
+  g1a  ~ dnorm(0, .0001)
+  g2a  ~ dnorm(0, .0001)
+  g0b  ~ dnorm(0, .0001)
+  g1b  ~ dnorm(0, .0001)
+  g2b  ~ dnorm(0, .0001)
+  Tau.B[1:2,1:2] <- inverse(Sigma.B[,])
+  Sigma.B[1,1] <- pow(sigma.a, 2)
+  sigma.a  ~ dunif(0, 100)
+  Sigma.B[2,2] <- pow(sigma.b, 2)
+  sigma.b  ~ dunif(0, 100)
+  Sigma.B[1,2] <- rho*sigma.a*sigma.b
+  Sigma.B[2,1] <- Sigma.B[1,2]
+  rho ~ dunif(-1,1)
+}
+write.model(nba.jags.M3, "nba.jags.M3.rjags")
+```
+
+```{r}
+# The number of iterations
+M <- 10000
+# This is the actual JAGS run
+nba.jags.out3 <- jags(data=nba.jags.data3, inits=nba.jags.inits3,parameters.to.save=nba.jags.parameters3,model="nba.jags.M3.rjags", n.chains=3, n.iter=M, DIC=F)
+```
+
+
+```{r}
+library(mcmcplots)
+bb.mod.mcmc <- as.mcmc(nba.jags.out3)
+mcmcplot(bb.mod.mcmc)
+```
+
+```{r}
+sink("nba.mcmc.summary.txt")
+nba.mcmc <- as.mcmc(nba.jags.out3)
+print(summary(nba.mcmc))
+sink()
+```
+
+#Plot
+```{r}
+library(superdiag)
+sink("nba.mcmc.superdiag.txt")
+print(superdiag(nba.mcmc, burnin = 100))
+sink()
+```
+
+#Density plot
+
+```{r eval=FALSE, include=FALSE}
+denplot(nba.mcmc, parms = nba.jags.parameters3)
+```
+
+
+```{r}
+traplot(nba.mcmc, parms = c("alpha", "beta1", "beta2"))
+```
+
+
+```{r}
+caterplot(nba.mcmc)
+```
+
+
+```{r eval=FALSE, include=FALSE}
+library(ggmcmc)
+nba.mcmc.gg <- ggs(nba.mcmc)
+ggmcmc(nba.mcmc.gg, file = "nba.ggmcmc.pdf")
+```
+
+```{r eval=FALSE, include=FALSE}
+# pdf("nba_trace.pdf")
+# traceplot(nba.mcmc)
+# dev.off()
+```
+
+#convergence
+
+
+```{r}
+# Update your model if necessary - e.g. if there is no/little convergence:
+bayes.mod.fit.upd <- update(nba.jags.out3, n.iter=1000)
+bayes.mod.fit.upd <- autojags(nba.jags.out3)
+```
+
+4.3 Diagnostics
+
+```{r}
+# print(nba.jags.out3)
+```
+
+```{r}
+plot(nba.jags.out3)
+```
+
+
+```{r}
+#Convert rjags mcmc.list to array format (iterations x parameters x chains)
+arr <- as.array(nba.jags.out3$samples)
+
+#convert array to iterations x chains x parameters
+arr <- aperm(arr, c(1,3,2))
+
+#Calculate split-chain Rhat and other parameters
+#no warmup/burn-in iterations saved by jagsUI, so set warmup to 0
+mon <- rstan::monitor(arr, warmup=0)
+
+```
+
+```{r}
+#nba.jags.out1a$BUGSoutput$summary[c(1:2, 249:254), c(1, 2, 3, 7, 8)]
+knitr::kable(nba.jags.out3$BUGSoutput$summary[c(1:2,249:252,1120:1130),
+                                              c(1, 2, 3, 7, 8, 9)], digits = 3,
+             caption = "Varying Intercepts and Slopes")
+```
+
+
+```{r}
+
+knitr::kable(nba.jags.out2a$BUGSoutput$summary[c(1:5, 560:566), c(1, 2, 3, 7, 8, 9)],
+      digits = 3, caption = "Varying Intercepts (16.2)")
+```
+
+
+
+
+
+```{r include=FALSE}
+player_id_8 <- NBA |> 
+  filter(pts>10) |> 
+  group_by(player_id) |> 
+  mutate(Len = n()) |> 
+  filter(Len > 6) |> 
+  ungroup() |> 
+  distinct(player_id)
+
+selPid <- slice_sample(player_id_8, n = 8)
+
+selPid <- selPid[["player_id"]]
+
+selMod <- match(selPid, unique(NBA$player_id))
+
+NBA |> 
+  filter(player_id %in% selPid) -> NBA2
+```
+
+
+```{r echo=FALSE}
+plotData3 <- data.frame(player_id = selPid,
+                      intercept1 = nba.jags.out2a$BUGSoutput$summary[selMod,1],
+                      slope1 = nba.jags.out2a$BUGSoutput$summary[566,1],
+                      intercept2 = nba.jags.out3$BUGSoutput$summary[selMod,1],
+                      slope2 = nba.jags.out3$BUGSoutput$summary[566+selMod,1])
+modelCol <- c("M1" = "dodgerblue", "M2" = "firebrick")
+modelLine <- c("M1" = "solid", "M2" = "dashed")
+plot(plotData3)
+```
+
+
+```{r echo=FALSE}
+ggplot(NBA2) +
+  geom_point(alpha = 0.5, aes(x = pts, y = salary))+
+    facet_wrap(~player_id, nrow = 2)+
+  geom_abline(data = plotData3, aes(intercept = intercept1, slope = slope1,
+                                    color = "M1", linetype = "M1")) +
+  geom_abline(data = plotData3, aes(intercept = intercept2, slope = slope2,
+                                    color = "M2", linetype = "M2"))+
+  scale_color_manual(name="Model", values = modelCol,
+                     labels = c("Varying Intercepts", "Varying Intercepts and Slopes")) +
+   scale_linetype_manual(name="Model", values = modelLine,
+                        labels = c("Varying Intercepts", "Varying Intercepts and Slopes"))+
+  labs(x = "Points", y = "Salary") +
+  theme(legend.position="top") 
+
+```
+

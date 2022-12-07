@@ -1,0 +1,437 @@
+---
+title: "Final_Project"
+author: "Yuka, Adela, Jack"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+# 1. The statement of the problem
+
+NBA players are on average the highest-paid athletes in the world, according to Statista.com. The NBA players get paid an average salary of around 7.5 million. The median salary is about 3.8 million. The highest salary in the NBA for the 2016-2017 season is about 25 million, including superstar LeBron James from Cleveland Cavaliers.
+
+Oftentimes sports players would seem to have major contracts with really high annual salaries (some people would even think they should not get paid so much).
+
+Since of one our group members is a super fan of the NBA, he believes that those basketball players are paid by their season total performance. However, other members in our group think otherwise.
+
+Through this project, we want to find out whether the NBA players and their season total performance have a strong correlation.
+
+For this project, we would use the 2016-2017 season total performance and actual salaries to create a prediction model. Then, we fit the
+2017-2018 season total performance to the prediction model, see the difference between the salaries we expected during 2017-2018 season and the actual salaries in 2017-2018.
+
+### Purpose:
+
+1.  Discover which predictors variables are critical to the salaries of the NBA players
+
+2.  Use a multiple regression model to predict NBA players' salaries
+
+3.  Examine the difference between the predicted salaries and actual salaries
+
+# 2. Data Section
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(broom)
+library(GGally)
+library(lbutils)
+library(olsrr)
+library(fastDummies)
+library(lattice)
+library(ggfortify)
+library(car)
+```
+
+### Data source
+
+Our season total performance and salary data sets were collected from Basketball Reference (<https://www.basketball-reference.com/>)
+
+### Processing the data
+
+1.  Data set:
+
+Combines NBA player performance and salary data by using player ID and team. During the regular season, some of the players will change their team, so they have two different performances and salaries.
+
+2.  Data cleaning:
+
+We combined three datasets (NBA player salaries summary 1985-2018, season performance for both 2016-2017 and 2017-2018) from Basketball Reference. We joined the data sets based on the playerID and their team names. Originally, the data set has a total of 34 variables, including 6 categorical variables, and 28 continuous variables.
+
+In the first step of data cleaning, we removed 20 variables that seem to be either duplicated or are a combination of other variables. (i.e. trb = orb + drb). Later, we dropped the person who has the total performances as they transferred the teams during the season in order to focus on their performance.
+
+# 3. Model Building Process
+
+```{r echo=TRUE}
+NBA <- read_csv("NBA.csv")
+head(NBA, 5)
+```
+
+### Data Set - salary with 14 predictors variables
+
+The predictor variables include 2 categorical variables and 12 continuous variables.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+original_data <- NBA %>% 
+  select(-rk, -player, -player_id, -`17_18salary`, 
+         -name, -tm, -`fg`, -`fga`, -`3pa`, -`2pa`, -ft, -fta, -g, -gs, 
+         -`efg%`, -mp, -orb, - drb, -pf, -age)
+
+head(original_data, 5)
+```
+
+### Correlation Analysis
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+original_data %>%
+    ggpairs()
+```
+
+Based on the correlation plot, we can see the strongest linear relationship occurs between salary and points, although there could be a bit of a curvi-linear relationship. 3p, 2p, trb, ast, stl, tov have strong relationships as well.
+
+
+### Checking Y Predictable
+
+```{r echo=TRUE}
+qplot(data = original_data, x = `16_17_salary`, 
+      geom = "histogram", 
+      main = "Distribution of 2016-2017 Salary", 
+      bins = 20, color = I("black"), fill = I("blue"))
+```
+
+According to the histogram plot, we can see that the plot is right-skewed. To remedy the issue, we transformed the salary by taking logs.
+
+### Log Salary for Better Prediction
+
+```{r echo=TRUE}
+original_data %>%
+  mutate(lnsalary = log(`16_17_salary`)) -> 
+  original_data
+```
+
+```{r echo=TRUE}
+qplot(data = original_data, x = lnsalary, geom = "histogram", 
+      bins = 20, color = I("black"), fill = I("blue"), 
+      main = "Distribution of ln(2016-2017 Salary)")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+qplot(data = original_data, y = lnsalary, geom = "boxplot",
+      main = "Distribution of 2016-2017 Salary")
+```
+
+Examining the histogram of log salary, we see possibly a very slight left skew, but it is closer to symmetric than without transform salary. According to the box plot, there are some of the outlines.
+
+### Original Model(only continuous variables)
+
+```{r echo=TRUE}
+original_data %>% 
+  select(-`16_17_salary`, -pos , -trans_team) -> 
+  new_og_data
+
+og_model <- lm(lnsalary ~ ., data = new_og_data)
+
+mult_og <- tidy(og_model)
+mult_og
+```
+
+-   Fitted model: $\widehat{ln(salary)}$ = 13.05 + 6.5 $\cdot fg%$ + 0.01 $\cdot 3p$ - 0.028 $\cdot 3p%$ + 0.004 $\cdot 2p$ - 5.02 $\cdot 2p%$ + 0.39 $\cdot ft%$ + 0.0024 $\cdot trb$ + 0.0013 $\cdot ast$ + 0.0019 $\cdot stl$
+
+```{r}
+g_mult_og <- broom::glance(og_model)
+g_mult_og
+```
+
+```{r}
+og_anova <- lb_anovat_lm(og_model, reg_collapse = TRUE)
+og_anova
+```
+
+```{r}
+vif(og_model)
+```
+
+According to the VIF, it shows our original model isn't good enought to be our final model. Some of the varables are more than 5.
+
+### All Subset Models
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+all_subsets_model <- ols_step_all_possible(og_model)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(all_subsets_model)
+```
+
+-   Based on the $R^2_{adj}$ , Mallow's cp, and AIC criteria, we would choose the model that contains all 5 variables (Model 793). Model 793 has 5 variables, Cp = 6.09, AIC = 1275.92, \$R\^2{adj} = 0.41.
+
+### Reduce Model based on All Subset Models Method
+
+```{r}
+reduce <- NBA %>% 
+  mutate(lnsalary = log(`16_17_salary`)) %>% 
+  select(lnsalary,`fg%`,`3p`,`2p`,`2p%`,trb, pos, trans_team)
+```
+
+```{r}
+reducemodel <- lm(lnsalary ~`fg%` + `3p` + `2p`+`2p%`+ trb , data = new_og_data)
+
+reduce_model_t <- tidy(reducemodel) 
+reduce_model_t
+```
+
+* Reduce model: $\widehat{ln(salary)}$ = 13.441 + 6.308 $\cdot fg%$ + 0.009 $\cdot 3p$ + 0.002 $\cdot 2p$ - 5.039 $\cdot 2p%$ + 0.002 $\cdot trb$
+
+```{r}
+reduce_model_g <- broom::glance(reducemodel)
+reduce_model_g
+```
+
+```{r}
+reduce_model_a <- lb_anovat_lm(reducemodel)
+reduce_model_a
+```
+
+```{r}
+tidy(reducemodel, conf.int = "TRUE", conf.level = 0.98)
+```
+
+```{r}
+vif(reducemodel)
+```
+
+According to the VIF, it shows our original model is good enough to be our final model, all of the variables are less than 5.
+
+### Adding Dummy Variables - lnsalary with 5 continuous predictors variables
+
+We want to figure out will the position they play and transfer to different teams during the regular season influence their salaries?
+
+Since some players had transferred teams during the season, we decided to create a dummy variable for transfer team or not (0=did not transfer, 1=transferred). We also created dummy variables for their positions to predict salary based on the position they played (c = center, pf = power forward, sf = small forward, pg = point guard, and sg = shooting guard; 0 = did not play in position, 1 = played in that position).
+
+```{r}
+results <- dummy_cols(.data = reduce, select_columns = c("pos","trans_team"))
+
+results %>%
+  select(pos, pos_C, pos_PF, pos_PG, pos_SF, pos_SG, trans_team, trans_team_none, 
+         trans_team_trans) %>%
+  head(6)
+
+newresult <- dummy_cols(.data = reduce, select_columns = c("pos","trans_team"), 
+                        remove_selected_columns = TRUE)
+
+rename(.data = newresult, trans = trans_team_trans) -> newdummy
+
+dummy_model <- lm(lnsalary ~ ., data = newdummy)
+```
+
+```{r}
+dumtidyout <- tidy(dummy_model)
+
+dumglout <- glance(dummy_model)
+
+dumtidyout
+dumglout
+
+dummy_a <- lb_anovat_lm(dummy_model, reg_collapse = FALSE)
+dummy_a
+```
+
+-   Reduce model: $\widehat{ln(salary)}$ = 12.277 + 6.357 $\cdot fg%$ + 0.009 $\cdot 3p$ + 0.002 $\cdot 2p$ -4.949 $\cdot 2p%$ + 0.001 $\cdot trb$ + 0.274 $\cdot posC$ + 0.451 $\cdot pos_PF$ + 0.313 $\cdot posPG$ + 0.516 $\cdot posSF$ + 0.955 $\cdot transteamnone$
+
+### Comparing models
+
+```{r}
+dumglout #dummy models
+```
+
+```{r}
+g_mult_og #full model wihtout dummy
+```
+
+```{r}
+reduce_model_g # reduce model
+```
+
+For the full model without dummy variables (12 variables) $R^2_{adj}$ = 0.4096448 
+
+For the reduced model (5 variables) $R^2_{adj}$ = 0.4095163
+
+For the reduce model including dummy variables (10 variables) $R^2_{adj}$ = 0.4455106 
+
+In terms of $R^2_{adj}$, the reduce model including dummy variables does a better job fitting the data as it has the higher $R^2_{adj}$
+
+### Model Testing
+
+```{r}
+# Assumtion
+autoplot(dummy_model)
+```
+
+Based on the fitted residual plot, it seems some multi-linear regression assumptions are violated.
+
+```{r}
+# Residual normality test
+shapiro.test(dummy_model$residuals)
+```
+
+According to the Shapiro-Wilk normality test with a test statistic of 0.99 and an associated p-value = 0.00187, since the p-value is below 0.05 which indicates the NBA Dummy data significantly deviate from a normal distribution.
+
+```{r}
+# Residual independence test
+durbinWatsonTest(dummy_model)
+```
+
+-   $H_0$ = residual from the regression are not auto-correlated
+    (autocorrelation coefficient, p=0)
+
+-   $H_0$: Alter = residuals from the regression are auto-correlated
+    (AC, p \> 0)
+
+According to the Durbin-Watson test with a test statistic of 1.81 and an associated p-value = 0.024, since the test statistic fell into the range of 0 to 2, which indicates that that there is a positive autocorrelation.
+
+```{r}
+# Residual variance homogeneity test
+ncvTest(dummy_model)
+```
+
+According to the non-constant variance score test with a chisquare 16.5513 and an associated p-value = 0.000047, which indicates that there has a heteroskedasticity issue.
+
+```{r}
+# Testing for Non-Constant Variance Residual by using Breusch-Pagan
+library(lmtest)
+bptest(dummy_model)
+```
+
+Test: \* $H_0: \gamma_1 = 0$ \* $H_1: \gamma_1 \neq 0$
+
+According to the Breusch-Pagan Test with a test statistic = 28.039 and an associated p-value = 0.0018, under the assumption that $H_0$ is true (variance of the disturbance terms is constant), it would be quite unlikely that we would observe a test statistic of our magnitude or larger.
+
+Consequently, we can reject $H_0$ and conclude there is a sufficient statistical evidence to indicate that the variance is changing relative to the magnitude of lnsalary, which means we need to take further procedure to fix the issues.
+
+As the results from several model testing, we can confirm there is some heteroskedascity issues with our residual and fitted value, as well as the residual normality.
+
+### Fixing Heteroskedasticity by Using WLS
+
+Since the residual plot show that the error look like uneven distribution, it violates the assumption of homogeneity of variance. As the result, it has heterodasticity issue, so we solve this violation by using WLS.
+
+```{r}
+refit <- lm(abs(residuals(dummy_model)) ~ fitted(dummy_model))
+refit
+```
+
+```{r}
+wts <- 1 / fitted(refit)^2
+```
+
+### Final Model
+
+Test: 
+
+$H_0 : \beta_1 = \beta_2 = ... =\beta_{10}=0$
+
+$H_1 : \beta_i \neq 0$ for some $i = 1,2,...10$
+
+```{r}
+lm_wls <- lm(lnsalary ~ ., data = newdummy, weights = wts)
+tidy(lm_wls)
+```
+
+```{r}
+glance(lm_wls)
+```
+
+```{r}
+final_model_a <- lb_anovat_lm(lm_wls)
+final_model_a
+```
+
+Test Statistic: \* $F = \frac{MSR}{MSE} = 33.334$ \* p-value \< 0.00001
+
+-   Reduce model: $\widehat{ln(salary)}$ = 12.496 + 5.729 $\cdot fg%$ + 0.007 $\cdot 3p$ + 0.002 $\cdot 2p$ -4.648 $\cdot 2p%$ + 0.001 $\cdot trb$ + 0.198 $\cdot posC$ + 0.412 $\cdot posPF$ + 0.241 $\cdot posPG$ + 0.424 $\cdot posSF$ + 1.033 $\cdot transteamnone$
+
+For the final model $R^2_{adj}$ = 0.436743.
+
+Conclusion. Given the test statistic F = 33.334 and its corresponding p-value \< 0.00001. If none of the predictor variables were useful in explaining the variation we see in log salary, it would be almost impossible to observe a test statistic of our magnitude or greater.
+
+Consequently, we will reject and conclude that there is overwhelming statistical evidence to indicate that at least one the predictor variables is useful in explaining the variation in log salary.
+
+```{r}
+# Assumtion
+autoplot(lm_wls)
+
+# Residual normality test
+shapiro.test(lm_wls$residuals)
+
+# Residual independence test
+durbinWatsonTest(lm_wls)
+
+# Residual variance homogeneity test
+ncvTest(lm_wls)
+```
+
+The model has followed all assumptions except residual normality test.
+
+### Evaluate Forecast Model
+
+```{r}
+test <- read_csv("player17_18.csv")
+names(test)[1:31] <- tolower(names(test)[1:31])
+
+test_result <- dummy_cols(.data = test, 
+                          select_columns = c("pos","trans_team"), remove_selected_columns = TRUE)
+rename(.data = test_result, trans = trans_team_trans) -> test_dummy
+
+# final reduce model
+full_predict <- predict(lm_wls, newdata = test_dummy, interval = "confidence", level = 0.95)
+full_predict <- cbind(test_dummy, full_predict)
+
+full_predict1 <- full_predict %>% 
+  left_join(NBA, by = c("player_id" = "player_id", "tm" = "tm")) %>% 
+  select(fit, `17_18salary`)
+  
+diff <- log(full_predict1$`17_18salary`)-full_predict1$fit
+
+MAD <- mean(abs(diff),na.rm = TRUE)
+MSE <- mean(diff^2,na.rm = TRUE)
+```
+
+We use a forecasting model to determine how well it does in producing accurate forecasts, not how well it fits the historical model. Measuring forecast accuracy, MAD=0.864, MSE=1.124.
+
+From the result, both MAD and MSE are small and close to 0, actual values are very close to the predicted values. It means that the prediction model we done is working well.
+
+# 4. Inferences Based on the Model
+
+After we build the multiple regression model, we can predict NBA players' salaries. The model has followed all assumptions except residual normality test.
+
+Furthermore, the difference between predicted and actual salaries is small, which means that our model is great for applying.
+
+# 5. Further Directions
+
+Since the data only offer the data that indicate players trans team during the regular season, isn't include off the season data that most of the palyers trans team time. For the further study, we recommend that add the resign the contrast or not, because the longer time interval model contrast effect maybe improve the results.
+
+The coefficient of 2p% is -4.949. (weird)
+
+We would like to collect 
+
+1)seniority 
+
+2)the points per game to help improve your results.
+
+We only use 16-17 salary to build our model, if we can add different year of salary data in our model, we could consider to use panel data analysis in our future research.   
+
+# 6. Group Work
+
+Project Concept Contribution: Jack
+
+Data collection: Adela
+
+Data cleaning: Yuka
+
+Model Building Process: Yuka, Adela
+
+Analysis result: Yuka, Adela, Jack
+
+PPT: Jack

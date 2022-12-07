@@ -1,0 +1,30 @@
+model
+{
+    for (i in 1:n) {
+        y[i] ~ dnorm(y.hat[i], tau.y)
+        y.hat[i] <- a[player[i]] + b[player[i]] * x[i]
+    }
+    tau.y <- pow(sigma.y, -2)
+    sigma.y ~ dunif(0.00000E+00, 100)
+    for (j in 1:J) {
+        a[j] <- B[j, 1]
+        b[j] <- B[j, 2]
+        B[j, 1:2] ~ dmnorm(B.hat[j, ], Tau.B[, ])
+        B.hat[j, 1] <- g0a + g1a * age_group[j] + g2a * position[j]
+        B.hat[j, 2] <- g0b + g1b * age_group[j] + g2b * position[j]
+    }
+    g0a ~ dnorm(0.00000E+00, 1.00000E-04)
+    g1a ~ dnorm(0.00000E+00, 1.00000E-04)
+    g2a ~ dnorm(0.00000E+00, 1.00000E-04)
+    g0b ~ dnorm(0.00000E+00, 1.00000E-04)
+    g1b ~ dnorm(0.00000E+00, 1.00000E-04)
+    g2b ~ dnorm(0.00000E+00, 1.00000E-04)
+    Tau.B[1:2, 1:2] <- inverse(Sigma.B[, ])
+    Sigma.B[1, 1] <- pow(sigma.a, 2)
+    sigma.a ~ dunif(0.00000E+00, 100)
+    Sigma.B[2, 2] <- pow(sigma.b, 2)
+    sigma.b ~ dunif(0.00000E+00, 100)
+    Sigma.B[1, 2] <- rho * sigma.a * sigma.b
+    Sigma.B[2, 1] <- Sigma.B[1, 2]
+    rho ~ dunif(-1, 1)
+}
