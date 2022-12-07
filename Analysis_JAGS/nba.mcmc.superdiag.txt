@@ -1,0 +1,3 @@
+Plotting histograms
+Plotting density plots
+Plotting traceplots
